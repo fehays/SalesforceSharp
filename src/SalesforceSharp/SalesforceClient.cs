@@ -43,7 +43,7 @@ namespace SalesforceSharp
         protected internal SalesforceClient(IRestClient restClient)
         {
             m_restClient = restClient;
-            ApiVersion = "v28.0";
+            ApiVersion = "v50.0";
             m_deserializer = new DynamicJsonDeserializer();
             genericJsonDeserializer = new GenericJsonDeserializer(new SalesforceContractResolver(false));
             updateJsonSerializer = new GenericJsonSerializer(new SalesforceContractResolver(true));
@@ -309,6 +309,25 @@ namespace SalesforceSharp
             var recordUpdated = response.StatusCode == HttpStatusCode.NoContent;
 
             return recordUpdated;
+        }
+
+        /// <summary>
+        /// Upserts a record.
+        /// </summary>
+        /// <param name="objectName">The name of the object in Salesforce.</param>
+        /// <param name="externalIdFieldName">The name of the extenral id field.</param>
+        /// <param name="externalId">The value of the external id field.</param>
+        /// <param name="record">The record to be updated.</param>f
+        public string Upsert(string objectName, string externalIdFieldName, string externalId, object record)
+        {
+            ExceptionHelper.ThrowIfNullOrEmpty("objectName", objectName);
+            ExceptionHelper.ThrowIfNullOrEmpty("externalIdFieldName", externalIdFieldName);
+            ExceptionHelper.ThrowIfNullOrEmpty("externalId", externalId);
+            ExceptionHelper.ThrowIfNull("record", record);
+
+            var response = RequestRaw(GetUrl("sobjects"), "{0}/{1}/{2}".With(objectName, externalIdFieldName, externalId), record, Method.PATCH);
+
+            return m_deserializer.Deserialize<dynamic>(response);
         }
 
         /// <summary>
