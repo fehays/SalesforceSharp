@@ -1,8 +1,13 @@
-﻿using System.Net;
-using HelperSharp;
+﻿using HelperSharp;
+using Microsoft.IdentityModel.Tokens;
 using RestSharp;
 using SalesforceSharp.Serialization;
 using System;
+using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
+using System.Net;
+using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
 
 
 namespace SalesforceSharp.Security
@@ -20,26 +25,46 @@ namespace SalesforceSharp.Security
     {
         #region Fields
         private IRestClient m_restClient;
-        private string m_jwtToken;
+        private string m_clientId;
+        private string m_username;
+        private string m_pfxFilePassword;
+        private string m_pfxFilePath;
         #endregion
 
         #region Constructors
         /// <summary>
         /// Initializes a new instance of the <see cref="JwtBearerAuthenticationFlow"/> class.
         /// </summary>
-        /// <param name="jwtToken">The JWT Token</param>
-        public JwtBearerAuthenticationFlow(string jwtToken) :
-            this(new RestClient(), jwtToken)
+        /// <param name="clientId">The client id.</param>
+        /// <param name="username">The salesforce username.</param>
+        /// <param name="pfxFilePassword">Password for the pfx key file.</param>
+        public JwtBearerAuthenticationFlow(string clientId, string username, string pfxFilePassword) :
+            this(new RestClient(), clientId, username, pfxFilePassword)
         {
         }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="JwtBearerAuthenticationFlow"/> class.
         /// </summary>
-        /// <param name="jwtToken">The JWT Token</param>
+        /// <param name="clientId">The client id.</param>
+        /// <param name="username">The salesforce username.</param>
+        /// <param name="pfxFilePassword">Password for the pfx key file.</param>
+        /// <param name="pfxFilePath">Path to the local pfx key file.</param>
+        public JwtBearerAuthenticationFlow(string clientId, string username, string pfxFilePassword, string pfxFilePath) :
+            this(new RestClient(), clientId, username, pfxFilePassword, pfxFilePath)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="JwtBearerAuthenticationFlow"/> class.
+        /// </summary>
+        /// <param name="clientId">The client id.</param>
+        /// <param name="username">The salesforce username.</param>
+        /// <param name="pfxFilePassword">Password for the pfx key file.</param>
+        /// <param name="pfxFilePath">Path to the local pfx key file.</param>
         /// <param name="tokenRequestEndpointUrl">The token request endpoint url.</param>
-        public JwtBearerAuthenticationFlow(string jwtToken, string tokenRequestEndpointUrl) :
-            this(new RestClient(), jwtToken, tokenRequestEndpointUrl)
+        public JwtBearerAuthenticationFlow(string clientId, string username, string pfxFilePassword, string pfxFilePath, string tokenRequestEndpointUrl) :
+            this(new RestClient(), clientId, username, pfxFilePassword, pfxFilePath, tokenRequestEndpointUrl)
         {
         }
 
@@ -47,14 +72,23 @@ namespace SalesforceSharp.Security
         /// Initializes a new instance of the <see cref="JwtBearerAuthenticationFlow"/> class.
         /// </summary>
         /// <param name="restClient">The REST client which will be used.</param>
-        /// <param name="jwtToken">The JWT Token</param>
+        /// <param name="clientId">The client id.</param>
+        /// <param name="pfxFilePassword">Password for the pfx key file.</param>
+        /// <param name="username">The salesforce username.</param>
+        /// <param name="pfxFilePath">Path to the local pfx key file.</param>
         /// <param name="tokenRequestEndpointUrl">The token request endpoint url.</param>
-        internal JwtBearerAuthenticationFlow(IRestClient restClient, string jwtToken, string tokenRequestEndpointUrl = "https://login.salesforce.com/services/oauth2/token")
+        internal JwtBearerAuthenticationFlow(IRestClient restClient, string clientId, string username, string pfxFilePassword, string pfxFilePath = "./server.pfx", string tokenRequestEndpointUrl = "https://login.salesforce.com/services/oauth2/token")
         {
             ExceptionHelper.ThrowIfNull("restClient", restClient);
-            ExceptionHelper.ThrowIfNullOrEmpty("jwtToken", jwtToken);
+            ExceptionHelper.ThrowIfNull("clientId", clientId);
+            ExceptionHelper.ThrowIfNull("username", username);
+            ExceptionHelper.ThrowIfNull("pfxFilePassword", pfxFilePassword);
+
             m_restClient = restClient;
-            m_jwtToken = jwtToken;
+            m_clientId = clientId;
+            m_username = username;
+            m_pfxFilePassword = pfxFilePassword;
+            m_pfxFilePath = pfxFilePath;
             TokenRequestEndpointUrl = tokenRequestEndpointUrl;
         }
         #endregion
@@ -93,8 +127,11 @@ namespace SalesforceSharp.Security
             {
                 RequestFormat = DataFormat.Json
             };
+
+            var jwtToken = CreateClientAuthJwt();
+
             request.AddParameter("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer");
-            request.AddParameter("assertion", m_jwtToken);
+            request.AddParameter("assertion", jwtToken);
 
             var response = m_restClient.Post(request);
             var isAuthenticated = response.StatusCode == HttpStatusCode.OK;
@@ -113,6 +150,23 @@ namespace SalesforceSharp.Security
             {
                 throw new SalesforceException(responseData.error.Value, responseData.error_description.Value);
             }
+        }
+
+        /// <summary>
+        /// Create JWT token
+        /// </summary>
+        /// <returns>
+        /// The JWT token to be passed to auth server
+        /// </returns>
+        private string CreateClientAuthJwt()
+        {
+            var tokenHandler = new JwtSecurityTokenHandler { TokenLifetimeInMinutes = 25 };
+            var securityToken = tokenHandler.CreateJwtSecurityToken(
+                issuer: m_clientId, // issuer must be the client ID you were provided
+                audience: TokenRequestEndpointUrl, // audience must be the identity provider
+                subject: new ClaimsIdentity(new List<Claim> { new Claim(JwtRegisteredClaimNames.Sub, m_username), new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()) }),
+                signingCredentials: new SigningCredentials(new X509SecurityKey(new X509Certificate2(m_pfxFilePath, m_pfxFilePassword)), "RS256"));
+            return tokenHandler.WriteToken(securityToken);
         }
         #endregion
     }
