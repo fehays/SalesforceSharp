@@ -98,7 +98,12 @@ namespace SalesforceSharp
         /// <summary>
         /// An invalid operator was used in the query() filter clause, at least for that field.
         /// </summary>
-        InvalidQueryFilterOperator
+        InvalidQueryFilterOperator,
+
+        /// <summary>
+        /// API access is not enabled for the current user.
+        /// </summary>
+        ApiCurrentlyDisabled
     }
     #endregion
 
